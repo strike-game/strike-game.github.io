@@ -1,504 +1,359 @@
+const game = document.getElementById('game');
+const line = document.getElementById('line');
+const msg = document.getElementById('msg');
+const msgText = document.getElementById('msgText');
+const nextButton = document.getElementById('nextButton');
+const levelInfo = document.getElementById('levelInfo');
+const progressInfo = document.getElementById('progress');
+const timerInfo = document.getElementById('timer');
+const movesInfo = document.getElementById('moves');
+const restartBtn = document.getElementById('restartBtn');
+const undoBtn = document.getElementById('undoBtn');
+
 const state = {
-  size: 5,
-  levelIndex: 0,
-  levelsCompleted: 0,
-  bestScore: 0,
-  time: 0,
-  moves: 0,
-  timerId: null,
-  currentPath: [],
+  level: 0,
+  route: [],
   visited: new Set(),
+  path: [],
   active: false,
   failed: false,
-  won: false,
-  touchId: null,
-  settings: {
-    sound: true,
-    particles: true,
-    reducedMotion: false,
-  },
-  playerName: "Player",
-  generatedLevel: null,
-  levelSeed: 1,
+  elapsed: 0,
+  timerId: null,
+  moveCount: 0,
 };
 
-const board = document.getElementById("board");
-const pathLayer = document.getElementById("pathLayer");
-const overlay = document.getElementById("overlay");
-const overlayTitle = document.getElementById("overlayTitle");
-const overlayText = document.getElementById("overlayText");
-const overlayAction = document.getElementById("overlayAction");
-const progressCount = document.getElementById("progressCount");
-const progressTotal = document.getElementById("progressTotal");
-const levelNumber = document.getElementById("levelNumber");
-const timerEl = document.getElementById("timer");
-const moveCountEl = document.getElementById("moveCount");
-const restartBtn = document.getElementById("restartBtn");
-const undoBtn = document.getElementById("undoBtn");
-const skipBtn = document.getElementById("skipBtn");
-const menuBtn = document.getElementById("menuBtn");
-const menuOverlay = document.getElementById("menuOverlay");
-const startBtn = document.getElementById("startBtn");
-const toast = document.getElementById("toast");
-const playerNameInput = document.getElementById("playerName");
-const bestScoreEl = document.getElementById("bestScore");
-const completedCountEl = document.getElementById("completedCount");
-const soundToggle = document.getElementById("soundToggle");
-const particlesToggle = document.getElementById("particlesToggle");
-const reducedMotionToggle = document.getElementById("reducedMotionToggle");
-const particles = document.getElementById("particles");
-const tabButtons = Array.from(document.querySelectorAll(".tab-btn"));
-const panels = Array.from(document.querySelectorAll(".panel"));
+const TILE_GAP = 10;
+const MAX_SIZE = 10;
 
 function init() {
-  bindEvents();
-  loadSettings();
-  startMenu();
-  updateHud();
-  renderStats();
+  restartBtn.addEventListener('click', restartLevel);
+  undoBtn.addEventListener('click', undoMove);
+  nextButton.addEventListener('click', restartLevel);
+  window.addEventListener('pointerdown', onPointerDown, { passive: false });
+  window.addEventListener('pointermove', onPointerMove, { passive: false });
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerUp);
+  window.addEventListener('resize', renderBoard);
+  startLevel();
 }
 
-function bindEvents() {
-  restartBtn.addEventListener("click", () => startLevel(state.levelIndex));
-  undoBtn.addEventListener("click", undoMove);
-  skipBtn.addEventListener("click", () => startLevel(state.levelIndex + 1));
-  menuBtn.addEventListener("click", () => showMenu());
-  board.addEventListener("pointermove", handleBoardPointerMove);
-  board.addEventListener("pointerup", handlePointerUp);
-  board.addEventListener("pointercancel", handlePointerUp);
-  startBtn.addEventListener("click", () => {
-    hideMenu();
-    startLevel(0);
-  });
-  overlayAction.addEventListener("click", () => {
-    if (state.won) {
-      nextLevel();
-    } else {
-      startLevel(state.levelIndex);
-    }
-  });
-  playerNameInput.addEventListener("input", (event) => {
-    state.playerName = event.target.value.trim() || "Player";
-    renderStats();
-  });
-  soundToggle.addEventListener("change", (event) => {
-    state.settings.sound = event.target.checked;
-    saveSettings();
-  });
-  particlesToggle.addEventListener("change", (event) => {
-    state.settings.particles = event.target.checked;
-    saveSettings();
-  });
-  reducedMotionToggle.addEventListener("change", (event) => {
-    state.settings.reducedMotion = event.target.checked;
-    saveSettings();
-    document.body.classList.toggle("reduced-motion", state.settings.reducedMotion);
-  });
-  tabButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      tabButtons.forEach((item) => item.classList.toggle("active", item === btn));
-      panels.forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === btn.dataset.panel));
-    });
-  });
-}
-
-function loadSettings() {
-  const stored = localStorage.getItem("strike-through-settings");
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored);
-      state.settings = { ...state.settings, ...parsed };
-    } catch (error) {
-      console.warn("Settings parse failed", error);
-    }
-  }
-  state.playerName = localStorage.getItem("strike-through-player") || "Player";
-  state.bestScore = Number(localStorage.getItem("strike-through-best") || 0);
-  state.levelsCompleted = Number(localStorage.getItem("strike-through-completed") || 0);
-  playerNameInput.value = state.playerName;
-  soundToggle.checked = state.settings.sound;
-  particlesToggle.checked = state.settings.particles;
-  reducedMotionToggle.checked = state.settings.reducedMotion;
-  document.body.classList.toggle("reduced-motion", state.settings.reducedMotion);
-}
-
-function saveSettings() {
-  localStorage.setItem("strike-through-settings", JSON.stringify(state.settings));
-  localStorage.setItem("strike-through-player", state.playerName);
-  localStorage.setItem("strike-through-best", String(state.bestScore));
-  localStorage.setItem("strike-through-completed", String(state.levelsCompleted));
-}
-
-function renderStats() {
-  bestScoreEl.textContent = state.bestScore;
-  completedCountEl.textContent = state.levelsCompleted;
-}
-
-function startMenu() {
-  menuOverlay.classList.remove("hidden");
-  overlay.classList.add("hidden");
-  setupBoard(5, 5);
-}
-
-function showMenu() {
-  menuOverlay.classList.remove("hidden");
-}
-
-function hideMenu() {
-  menuOverlay.classList.add("hidden");
-}
-
-function startLevel(levelIndex) {
-  state.levelIndex = levelIndex;
-  state.currentPath = [];
-  state.visited = new Set();
+function startLevel() {
+  state.route = generateRoute(state.level);
+  state.visited.clear();
+  state.path = [];
   state.active = false;
   state.failed = false;
-  state.won = false;
-  state.moves = 0;
-  state.time = 0;
+  state.elapsed = 0;
+  state.moveCount = 0;
   clearInterval(state.timerId);
-  state.timerId = null;
-  state.generatedLevel = generateLevel(levelIndex);
-  if (!state.generatedLevel) {
-    endRun();
-    return;
-  }
+  hideMessage();
   renderBoard();
   updateHud();
-  showOverlay("Level " + (levelIndex + 1), "Trace the full route without retracing any tile.");
-  hideMenu();
-  startTimer();
 }
 
-function generateLevel(index) {
-  const size = Math.min(7, 4 + Math.floor(index / 4));
-  const targetLength = Math.max(8, 8 + index * 2 + Math.floor(index / 3));
-  const maxAttempts = 400;
-  let attempt = 0;
-  while (attempt < maxAttempts) {
-    const path = buildPath(size, targetLength);
-    if (path && isPossiblePath(path, size)) {
-      return { size, path };
-    }
-    attempt += 1;
-  }
-  const fallback = buildPath(size, targetLength + 2);
-  return fallback && isPossiblePath(fallback, size) ? { size, path: fallback } : null;
+function restartLevel() {
+  startLevel();
 }
 
-function buildPath(size, targetLength) {
-  const cells = [];
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      cells.push([x, y]);
-    }
-  }
-  const start = cells[Math.floor(Math.random() * cells.length)];
-  const path = [start];
+function nextLevel() {
+  state.level += 1;
+  startLevel();
+}
+
+function updateHud() {
+  levelInfo.textContent = `Level ${state.level + 1}`;
+  progressInfo.textContent = `Visited ${state.path.length}/${state.route.length}`;
+  timerInfo.textContent = `Time: ${formatTime(state.elapsed)}`;
+  movesInfo.textContent = `Moves:${Math.max(state.moveCount, 0)}`;
+}
+
+function formatTime(seconds) {
+  const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
+  const secs = String(seconds % 60).padStart(2, '0');
+  return `${mins}:${secs}`;
+}
+
+function generateRoute(level) {
+  const size = Math.min(MAX_SIZE, 3 + Math.floor(level / 3));
+  const target = Math.min(size * size, Math.max(6, 6 + Math.floor(level * 1.5)));
+  const route = findPath(size, target);
+  if (route) return route;
+  return fallbackPath(size, target);
+}
+
+function findPath(size, target) {
+  const start = [Math.floor(Math.random() * size), Math.floor(Math.random() * size)];
   const visited = new Set([key(start)]);
-  const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-  let current = start;
-  while (path.length < targetLength) {
-    const neighbors = directions
-      .map(([dx, dy]) => [current[0] + dx, current[1] + dy])
-      .filter(([x, y]) => x >= 0 && y >= 0 && x < size && y < size && !visited.has(key([x, y])));
-    if (!neighbors.length) {
-      return null;
+  const route = [start];
+  if (searchRoute(route, visited, size, target)) return route;
+  return null;
+}
+
+function searchRoute(route, visited, size, target) {
+  if (route.length === target) return true;
+  const current = route[route.length - 1];
+  const neighbors = shuffle(getNeighbors(current, size));
+  neighbors.sort((a, b) => getNeighbors(a, size).length - getNeighbors(b, size).length);
+  for (const next of neighbors) {
+    const nextKey = key(next);
+    if (visited.has(nextKey)) continue;
+    visited.add(nextKey);
+    route.push(next);
+    if (searchRoute(route, visited, size, target)) {
+      return true;
     }
-    const next = neighbors[Math.floor(Math.random() * neighbors.length)];
-    current = next;
-    path.push(current);
-    visited.add(key(current));
+    route.pop();
+    visited.delete(nextKey);
   }
-  return path;
+  return false;
+}
+
+function fallbackPath(size, target) {
+  const route = [];
+  for (let y = 0; y < size && route.length < target; y += 1) {
+    const row = [...Array(size).keys()].map((x) => [x, y]);
+    if (y % 2) row.reverse();
+    for (const point of row) {
+      route.push(point);
+      if (route.length >= target) break;
+    }
+  }
+  return route;
+}
+
+function getNeighbors([x, y], size) {
+  const candidates = [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]];
+  return candidates.filter(([nx, ny]) => nx >= 0 && ny >= 0 && nx < size && ny < size);
 }
 
 function key([x, y]) {
   return `${x},${y}`;
 }
 
-function isPossiblePath(path, size) {
-  if (!path || path.length < 2) return false;
-  const visited = new Set(path.map((cell) => key(cell)));
-  if (visited.size !== path.length) return false;
-  for (let index = 0; index < path.length - 1; index += 1) {
-    const current = path[index];
-    const next = path[index + 1];
-    if (!isAdjacent(current, next)) return false;
-    if (current[0] < 0 || current[0] >= size || current[1] < 0 || current[1] >= size) return false;
-    if (next[0] < 0 || next[0] >= size || next[1] < 0 || next[1] >= size) return false;
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
   }
-  return true;
-}
-
-function setupBoard(cols, rows) {
-  board.innerHTML = "";
-  board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-  board.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-  const total = cols * rows;
-  for (let index = 0; index < total; index += 1) {
-    const tile = document.createElement("button");
-    tile.className = "tile";
-    tile.type = "button";
-    tile.dataset.index = index;
-    tile.addEventListener("pointerdown", handlePointerDown);
-    tile.addEventListener("pointerenter", handlePointerEnter);
-    tile.addEventListener("pointerup", handlePointerUp);
-    tile.addEventListener("touchstart", (event) => event.preventDefault(), { passive: false });
-    tile.addEventListener("touchmove", (event) => event.preventDefault(), { passive: false });
-    board.appendChild(tile);
-  }
+  return array;
 }
 
 function renderBoard() {
-  const { size, path } = state.generatedLevel;
-  setupBoard(size, size);
-  const tiles = Array.from(board.children);
-  tiles.forEach((tile, index) => {
-    const x = index % size;
-    const y = Math.floor(index / size);
-    const isPath = path.some(([px, py]) => px === x && py === y);
-    tile.dataset.x = x;
-    tile.dataset.y = y;
-    tile.classList.toggle("path-tile", isPath);
-    tile.textContent = isPath ? "" : "";
+  game.querySelectorAll('.tile, .particle').forEach((el) => el.remove());
+  if (!state.route.length) return;
+  const xs = state.route.map((c) => c[0]);
+  const ys = state.route.map((c) => c[1]);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const maxX = Math.max(...xs);
+  const maxY = Math.max(...ys);
+  const cols = maxX - minX + 1;
+  const rows = maxY - minY + 1;
+  const rect = game.getBoundingClientRect();
+  const cellSize = Math.floor((Math.min(rect.width, rect.height) - TILE_GAP * (Math.max(cols, rows) - 1)) / Math.max(cols, rows));
+  const offsetX = (rect.width - (cellSize * cols + TILE_GAP * (cols - 1))) / 2;
+  const offsetY = (rect.height - (cellSize * rows + TILE_GAP * (rows - 1))) / 2;
+
+  state.route.forEach((cell, index) => {
+    const tile = document.createElement('div');
+    tile.className = 'tile';
+    const x = cell[0] - minX;
+    const y = cell[1] - minY;
+    tile.style.width = `${cellSize}px`;
+    tile.style.height = `${cellSize}px`;
+    tile.style.left = `${offsetX + x * (cellSize + TILE_GAP)}px`;
+    tile.style.top = `${offsetY + y * (cellSize + TILE_GAP)}px`;
+    tile.dataset.x = cell[0];
+    tile.dataset.y = cell[1];
+    tile.dataset.index = index;
+    tile.addEventListener('pointerdown', onTileDown, { passive: false });
+    game.appendChild(tile);
+    if (index === 0) tile.classList.add('start');
   });
-  const pathSet = new Set(path.map((cell) => key(cell)));
-  const startCell = path[0];
-  const startIndex = startCell[1] * size + startCell[0];
-  const startTile = tiles[startIndex];
-  startTile.classList.add("start");
-  updatePathLayer();
-  updateProgress();
+  updateLine();
+  updateTiles();
 }
 
-function updatePathLayer() {
-  const { size, path } = state.generatedLevel;
-  const points = path.map(([x, y]) => `${(x + 0.5) / size},${(y + 0.5) / size}`).join(" ");
-  pathLayer.innerHTML = `
-    <polyline points="${points}" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="0.018" stroke-linecap="round" stroke-linejoin="round"></polyline>
-  `;
-  const currentPoints = state.currentPath.map((cell) => `${(cell[0] + 0.5)/size},${(cell[1]+0.5)/size}`).join(" ");
-  if (currentPoints) {
-    pathLayer.innerHTML += `<polyline points="${currentPoints}" fill="none" stroke="rgba(42,214,255,0.95)" stroke-width="0.026" stroke-linecap="round" stroke-linejoin="round"></polyline>`;
+function onTileDown(event) {
+  event.preventDefault();
+  const tile = event.currentTarget;
+  const cell = [Number(tile.dataset.x), Number(tile.dataset.y)];
+  if (state.failed) return;
+  if (state.path.length === 0 && sameCell(cell, state.route[0])) {
+    beginRoute(cell);
   }
 }
 
-function updateProgress() {
-  const total = state.generatedLevel.path.length;
-  progressCount.textContent = state.currentPath.length;
-  progressTotal.textContent = total;
-  levelNumber.textContent = state.levelIndex + 1;
-  moveCountEl.textContent = state.moves;
-}
-
-function showOverlay(title, text, actionLabel = "Start") {
-  overlay.classList.remove("hidden");
-  overlayTitle.textContent = title;
-  overlayText.textContent = text;
-  overlayAction.textContent = actionLabel;
-}
-
-function hideOverlay() {
-  overlay.classList.add("hidden");
-}
-
-function startTimer() {
-  state.time = 0;
-  if (state.timerId) clearInterval(state.timerId);
-  state.timerId = setInterval(() => {
-    state.time += 1;
-    timerEl.textContent = formatTime(state.time);
-  }, 1000);
-}
-
-function formatTime(seconds) {
-  const mins = String(Math.floor(seconds / 60)).padStart(2, "0");
-  const secs = String(seconds % 60).padStart(2, "0");
-  return `${mins}:${secs}`;
-}
-
-function handlePointerDown(event) {
-  if (!state.generatedLevel || state.failed || state.won) return;
-  const tile = event.currentTarget;
-  const cell = [Number(tile.dataset.x), Number(tile.dataset.y)];
-  const start = state.generatedLevel.path[0];
-  if (!sameCell(cell, start)) return;
+function beginRoute(cell) {
   state.active = true;
-  state.currentPath = [cell];
+  state.path = [cell];
   state.visited = new Set([key(cell)]);
-  state.moves = 1;
-  state.touchId = event.pointerId;
-  tile.setPointerCapture?.(event.pointerId);
-  highlightValidNext();
-  updatePathLayer();
-  updateProgress();
-  hideOverlay();
+  state.moveCount = 1;
+  state.elapsed = 0;
+  clearInterval(state.timerId);
+  state.timerId = setInterval(() => {
+    state.elapsed += 1;
+    updateHud();
+  }, 1000);
+  updateLine();
+  updateTiles();
+  updateHud();
 }
 
-function handlePointerEnter(event) {
-  if (!state.active || state.failed || state.won) return;
-  const tile = event.currentTarget;
-  const cell = [Number(tile.dataset.x), Number(tile.dataset.y)];
-  advanceToCell(cell);
+function onPointerDown(event) {
+  if (event.target.closest('.tile')) return;
+  if (state.active && !state.failed) event.preventDefault();
 }
 
-function handleBoardPointerMove(event) {
-  if (!state.active || state.failed || state.won) return;
-  const tile = document.elementFromPoint(event.clientX, event.clientY)?.closest(".tile");
+function onPointerMove(event) {
+  if (!state.active || state.failed) return;
+  event.preventDefault();
+  const element = document.elementFromPoint(event.clientX, event.clientY);
+  const tile = element?.closest('.tile');
   if (!tile) return;
   const cell = [Number(tile.dataset.x), Number(tile.dataset.y)];
-  advanceToCell(cell);
+  attemptMove(cell);
 }
 
-function handlePointerUp() {
+function onPointerUp() {
   state.active = false;
-  state.touchId = null;
 }
 
-function advanceToCell(cell) {
-  if (!state.active || state.failed || state.won) return false;
-  const expectedNext = state.generatedLevel?.path?.[state.currentPath.length];
-  if (!expectedNext || !sameCell(cell, expectedNext)) {
-    if (state.currentPath.length > 0 && !sameCell(cell, state.currentPath[0])) {
-      failRun();
-    }
-    return false;
+function attemptMove(cell) {
+  if (!state.route.length) return;
+  const nextExpected = state.route[state.path.length];
+  if (!nextExpected || !sameCell(cell, nextExpected)) {
+    if (!sameCell(cell, state.route[0])) failLevel();
+    return;
   }
   if (state.visited.has(key(cell))) {
-    failRun();
-    return false;
+    failLevel();
+    return;
   }
-  state.currentPath.push(cell);
+  state.path.push(cell);
   state.visited.add(key(cell));
-  state.moves += 1;
-  highlightValidNext();
-  updatePathLayer();
-  updateProgress();
-  if (state.currentPath.length === state.generatedLevel.path.length) {
-    winRun();
+  state.moveCount += 1;
+  updateLine();
+  updateTiles();
+  updateHud();
+  playTone(600, 0.04, 'sine', 0.04);
+  if (state.path.length === state.route.length) {
+    winLevel();
   }
-  return true;
 }
 
-function isAdjacent(a, b) {
-  return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) === 1;
+function updateLine() {
+  const points = state.path
+    .map((cell) => tileCenter(cell))
+    .map((pos) => `${pos.x},${pos.y}`)
+    .join(' ');
+  line.setAttribute('points', points);
+}
+
+function tileCenter(cell) {
+  const tile = Array.from(game.querySelectorAll('.tile')).find((div) => Number(div.dataset.x) === cell[0] && Number(div.dataset.y) === cell[1]);
+  if (!tile) return { x: 0, y: 0 };
+  const rect = tile.getBoundingClientRect();
+  const parent = game.getBoundingClientRect();
+  return { x: rect.left - parent.left + rect.width / 2, y: rect.top - parent.top + rect.height / 2 };
+}
+
+function updateTiles() {
+  Array.from(game.querySelectorAll('.tile')).forEach((tile) => {
+    tile.classList.remove('visited', 'validHover');
+    const cell = [Number(tile.dataset.x), Number(tile.dataset.y)];
+    if (state.visited.has(key(cell))) tile.classList.add('visited');
+  });
+  const next = state.route[state.path.length];
+  if (next) {
+    const nextTile = Array.from(game.querySelectorAll('.tile')).find((tile) => Number(tile.dataset.x) === next[0] && Number(tile.dataset.y) === next[1]);
+    nextTile?.classList.add('validHover');
+  }
+}
+
+function undoMove() {
+  if (!state.path.length || state.failed) return;
+  const removed = state.path.pop();
+  if (removed) state.visited.delete(key(removed));
+  state.moveCount = Math.max(state.path.length, 0);
+  updateLine();
+  updateTiles();
+  updateHud();
+}
+
+function failLevel() {
+  if (state.failed) return;
+  state.failed = true;
+  state.active = false;
+  playTone(180, 0.14, 'triangle', 0.08);
+  const total = line.getTotalLength();
+  line.style.strokeDasharray = total;
+  line.style.strokeDashoffset = '0';
+  requestAnimationFrame(() => {
+    line.style.strokeDashoffset = total;
+  });
+  setTimeout(startLevel, 900);
+}
+
+function winLevel() {
+  state.active = false;
+  clearInterval(state.timerId);
+  showMessage('You Win!');
+  playTone(620, 0.1, 'sine', 0.08);
+  playTone(780, 0.14, 'triangle', 0.08);
+  spawnParticles();
+  setTimeout(nextLevel, 1400);
+}
+
+function showMessage(text) {
+  msgText.textContent = text;
+  msg.classList.add('show');
+  nextButton.style.display = 'none';
+}
+
+function hideMessage() {
+  msg.classList.remove('show');
+}
+
+function spawnParticles() {
+  for (let i = 0; i < 30; i += 1) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    const bounds = game.getBoundingClientRect();
+    p.style.left = `${bounds.width / 2}px`;
+    p.style.top = `${bounds.height / 2}px`;
+    game.appendChild(p);
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 80 + Math.random() * 80;
+    const dx = Math.cos(angle) * distance;
+    const dy = Math.sin(angle) * distance;
+    p.animate([
+      { transform: 'translate(0,0) scale(1)', opacity: 1 },
+      { transform: `translate(${dx}px, ${dy}px) scale(0)`, opacity: 0 }
+    ], { duration: 700, easing: 'ease-out' });
+    setTimeout(() => p.remove(), 720);
+  }
+}
+
+function playTone(freq, duration, type = 'sine', volume = 0.08) {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return;
+  const ctx = new AudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  gain.gain.value = volume;
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+  osc.start();
+  osc.stop(ctx.currentTime + duration);
+  setTimeout(() => ctx.close(), duration * 1000 + 50);
 }
 
 function sameCell(a, b) {
   return a[0] === b[0] && a[1] === b[1];
-}
-
-function undoMove() {
-  if (!state.currentPath.length || state.failed || state.won) return;
-  const removed = state.currentPath.pop();
-  if (removed) {
-    state.visited.delete(key(removed));
-  }
-  state.moves = Math.max(1, state.moves - 1);
-  highlightValidNext();
-  updatePathLayer();
-  updateProgress();
-}
-
-function highlightValidNext() {
-  const tiles = Array.from(board.children);
-  tiles.forEach((tile) => tile.classList.remove("valid-next", "visited", "current"));
-  if (!state.currentPath.length) return;
-  const last = state.currentPath[state.currentPath.length - 1];
-  const pathSet = new Set(state.currentPath.map((cell) => key(cell)));
-  tiles.forEach((tile) => {
-    const cell = [Number(tile.dataset.x), Number(tile.dataset.y)];
-    if (pathSet.has(key(cell))) {
-      tile.classList.add("visited");
-      if (state.currentPath[state.currentPath.length - 1] && sameCell(cell, state.currentPath[state.currentPath.length - 1])) {
-        tile.classList.add("current");
-      }
-    } else if (isAdjacent(last, cell) && !state.visited.has(key(cell))) {
-      tile.classList.add("valid-next");
-    }
-  });
-}
-
-function failRun() {
-  if (state.failed) return;
-  state.failed = true;
-  state.active = false;
-  playTone(220, 0.08, "triangle", 0.12);
-  toastMessage("Oops — the line broke.");
-  const pathLayerChildren = Array.from(pathLayer.children);
-  pathLayerChildren.forEach((child, index) => 
-    child.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 650, easing: "ease-out" })
-  );
-  setTimeout(() => {
-    startLevel(state.levelIndex);
-  }, 900);
-}
-
-function winRun() {
-  if (state.won) return;
-  state.won = true;
-  state.active = false;
-  clearInterval(state.timerId);
-  state.levelsCompleted += 1;
-  state.bestScore = Math.max(state.bestScore, state.levelsCompleted);
-  saveSettings();
-  renderStats();
-  playTone(660, 0.12, "sine", 0.2);
-  playTone(880, 0.16, "triangle", 0.18);
-  spawnParticles();
-  toastMessage("You win!");
-  showOverlay("You Win!", `Level ${state.levelIndex + 1} cleared.`, "Next");
-  setTimeout(() => nextLevel(), 1200);
-}
-
-function nextLevel() {
-  startLevel(state.levelIndex + 1);
-}
-
-function endRun() {
-  showOverlay("All clear", "You completed the run. Restart to play again.", "Restart");
-  toastMessage("You beat the whole run!");
-}
-
-function toastMessage(message) {
-  toast.textContent = message;
-  toast.classList.add("show");
-  clearTimeout(toast.timeoutId);
-  toast.timeoutId = setTimeout(() => toast.classList.remove("show"), 1200);
-}
-
-function spawnParticles() {
-  if (!state.settings.particles) return;
-  const count = state.settings.reducedMotion ? 10 : 24;
-  for (let i = 0; i < count; i += 1) {
-    const particle = document.createElement("span");
-    particle.className = "particle";
-    particle.style.left = `${Math.random() * 100}%`;
-    particle.style.top = `${Math.random() * 100}%`;
-    particle.style.background = ["#2ad6ff", "#8b5cff", "#f7f9ff"][Math.floor(Math.random() * 3)];
-    particles.appendChild(particle);
-    setTimeout(() => particle.remove(), 700);
-  }
-}
-
-function playTone(frequency, duration, type = "sine", volume = 0.1) {
-  if (!state.settings.sound) return;
-  const AudioContext = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContext) return;
-  const ctx = new AudioContext();
-  const gain = ctx.createGain();
-  const osc = ctx.createOscillator();
-  osc.type = type;
-  osc.frequency.setValueAtTime(frequency, ctx.currentTime);
-  gain.gain.setValueAtTime(volume, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start();
-  osc.stop(ctx.currentTime + duration);
-  setTimeout(() => ctx.close(), duration * 1000 + 50);
 }
 
 init();

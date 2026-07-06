@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1,user-scalable=no">
+<title>One Stroke Path</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{
+margin:0;
+height:100%;
+overflow:hidden;
+background:#0f1117;
+font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+color:#fff;
+touch-action:none;
+}
+body{
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+gap:12px;
+}
+#top{
+display:flex;
+flex-wrap:wrap;
+justify-content:center;
+gap:10px;
+align-items:center;
+}
+.panel{
+background:#1b1f2b;
+padding:8px 12px;
+border-radius:12px;
+font-size:14px;
+}
+button{
+background:#1c2736;
+color:#fff;
+border:none;
+padding:9px 14px;
+border-radius:10px;
+cursor:pointer;
+transition:.2s;
+}
+button:hover{background:#2b3b53}
+button:active{transform:scale(.96)}
+#game{
+position:relative;
+width:min(90vw,90vh);
+height:min(90vw,90vh);
+background:#131722;
+border-radius:18px;
+box-shadow:0 0 30px rgba(0,0,0,.35);
+overflow:hidden;
+}
+.tile{
+position:absolute;
+background:white;
+border-radius:10px;
+transition:.18s;
+}
+.tile.start{
+outline:3px solid #00ffd5;
+}
+.tile.visited{
+background:#dffcff;
+box-shadow:0 0 18px #00eaff;
+}
+.tile.validHover{
+box-shadow:0 0 16px rgba(0,255,255,.7);
+transform:scale(1.05);
+}
+svg{
+position:absolute;
+left:0;
+top:0;
+width:100%;
+height:100%;
+pointer-events:none;
+overflow:visible;
+}
+#line{
+fill:none;
+stroke:#00eaff;
+stroke-width:10;
+stroke-linecap:round;
+stroke-linejoin:round;
+transition:stroke-dashoffset .5s;
+filter:drop-shadow(0 0 8px #00eaff);
+}
+#msg{
+position:absolute;
+inset:0;
+display:flex;
+align-items:center;
+justify-content:center;
+flex-direction:column;
+background:rgba(10,15,22,.8);
+font-size:42px;
+font-weight:700;
+opacity:0;
+pointer-events:none;
+transition:.35s;
+}
+#msg.show{
+opacity:1;
+pointer-events:auto;
+}
+#msg button{
+margin-top:20px;
+font-size:18px;
+}
+.particle{
+position:absolute;
+width:8px;
+height:8px;
+background:#00eaff;
+border-radius:50%;
+pointer-events:none;
+}
+</style>
+</head>
+<body>
+
+<div id="top">
+<div class="panel" id="levelInfo"></div>
+<div class="panel" id="progress"></div>
+<div class="panel" id="timer">Time: 0.0s</div>
+<div class="panel" id="moves">Moves:0</div>
+<button id="undoBtn">Undo</button>
+<button id="restartBtn">Restart</button>
+</div>
+
+<div id="game">
+<svg>
+<polyline id="line"/>
+</svg>
+<div id="msg">
+<div id="msgText"></div>
+<button id="nextButton" style="display:none;">Restart</button>
+</div>
+</div>
+
+<script>
+/* ============================================================
+   One Stroke Path
+   Single HTML / Vanilla JS
+============================================================ */
+
+const CELL=60;
+const GAP=10;
+
+const levels=[
+[[0,0],[1,0],[2,0],[3,0]],
+[[0,0],[1,0],[2,0],[2,1],[2,2]],
+[[0,0],[1,0],[2,0],[2,1],[1,1],[0,1]],
+[[0,0],[0,1],[1,1],[2,1],[2,2],[2,3],[1,3]],
+[[0,0],[1,0],[2,0],[3,0],[3,1],[2,1],[1,1],[0,1]],
+[[1,0],[1,1],[0,1],[0,2],[1,2],[2,2],[2,1],[2,0]],
+[[0,0],[1,0],[2,0],[3,0],[3,1],[3,2],[2,2],[1,2],[0,2],[0,1]],
+[[1,0],[2,0],[2,1],[1,1],[0,1],[0,2],[1,2],[2,2],[3,2],[3,1]],
+[[0,0],[0,1],[1,1],[2,1],[2,0],[3,0],[4,0],[4,1],[4,2],[3,2],[2,2]],
+[[0,0],[1,0],[2,0],[3,0],[3,1],[2,1],[1,1],[0,1],[0,2],[1,2],[2,2],[3,2],[4,2]]
+];
+
+let currentLevel=0;
+let map=new Map();
+let path=[];
+let drawing=false;
+let timer=0;
+let timerInterval=null;
+
+const game=document.getElementById("game");
+const line=document.getElementById("line");
+
+function key(x,y){return x+","+y;}
+
+function play(freq,duration,type="sine"){
+const ctx=play.ctx||(play.ctx=new (window.AudioContext||window.webkitAudioContext)());
+const o=ctx.createOscillator();
+const g=ctx.createGain();
+o.type=type;
+o.frequency.value=freq;
+o.connect(g);
+g.connect(ctx.destination);
+g.gain.value=.05;
+o.start();
+g.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+duration);
+o.stop(ctx.currentTime+duration);
+}
+
+function loadLevel(){
+clearInterval(timerInterval);
+timer=0;
+document.getElementById("timer").textContent="Time: 0.0s";
+path=[];
+drawing=false;
+map.clear();
+line.setAttribute("points","");
+game.querySelectorAll(".tile,.particle").forEach(e=>e.remove());
+
+if(currentLevel>=levels.length){
+showMessage("Congratulations!<br>All Levels Complete!",true);
+return;
+}
+hideMessage();
+
+const coords=levels[currentLevel];
+
+let xs=coords.map(c=>c[0]);
+let ys=coords.map(c=>c[1]);
+let minx=Math.min(...xs),maxx=Math.max(...xs);
+let miny=Math.min(...ys),maxy=Math.max(...ys);
+
+const cols=maxx-minx+1;
+const rows=maxy-miny+1;
+
+const size=Math.min(game.clientWidth/(cols+0.4),game.clientHeight/(rows+0.4));
+const cell=size*.82;
+const gap=size*.18;
+
+const totalW=cols*cell+(cols-1)*gap;
+const totalH=rows*cell+(rows-1)*gap;
+const offX=(game.clientWidth-totalW)/2;
+const offY=(game.clientHeight-totalH)/2;
+
+coords.forEach((c,i)=>{
+const [x,y]=c;
+const div=document.createElement("div");
+div.className="tile";
+if(i===0)div.classList.add("start");
+const px=offX+(x-minx)*(cell+gap);
+const py=offY+(y-miny)*(cell+gap);
+div.style.left=px+"px";
+div.style.top=py+"px";
+div.style.width=cell+"px";
+div.style.height=cell+"px";
+game.appendChild(div);
+
+map.set(key(x,y),{
+x,y,
+div,
+center:{
+x:px+cell/2,
+y:py+cell/2
+}
+});
+});
+
+document.getElementById("levelInfo").textContent=`Level ${currentLevel+1}/${levels.length}`;
+updateUI();
+}
+
+function updateUI(){
+document.getElementById("progress").textContent=`Visited ${path.length}/${levels[currentLevel].length}`;
+document.getElementById("moves").textContent=`Moves:${Math.max(path.length-1,0)}`;
+line.setAttribute("points",path.map(p=>`${p.center.x},${p.center.y}`).join(" "));
+highlightValid();
+}
+
+function highlightValid(){
+document.querySelectorAll(".validHover").forEach(e=>e.classList.remove("validHover"));
+if(path.length===0)return;
+const last=path[path.length-1];
+[[1,0],[-1,0],[0,1],[0,-1]].forEach(d=>{
+const n=map.get(key(last.x+d[0],last.y+d[1]));
+if(n&&!path.includes(n)){
+n.div.classList.add("validHover");
+}
+});
+}
+
+function startTimer(){
+clearInterval(timerInterval);
+timerInterval=setInterval(()=>{
+timer+=.1;
+document.getElementById("timer").textContent="Time: "+timer.toFixed(1)+"s";
+},100);
+}
+
+function getTileFromPoint(x,y){
+const el=document.elementFromPoint(x,y);
+if(!el||!el.classList.contains("tile"))return null;
+for(let obj of map.values())if(obj.div===el)return obj;
+return null;
+}
+
+function adjacent(a,b){
+return Math.abs(a.x-b.x)+Math.abs(a.y-b.y)===1;
+}
+
+function begin(tile){
+if(tile!==map.values().next().value)return;
+drawing=true;
+path=[tile];
+tile.div.classList.add("visited");
+startTimer();
+updateUI();
+play(550,.05);
+}
+
+function visit(tile){
+if(!drawing)return;
+const last=path[path.length-1];
+if(tile===last)return;
+if(!adjacent(last,tile))return;
+
+if(path.includes(tile)){
+lose();
+return;
+}
+tile.div.classList.add("visited");
+path.push(tile);
+updateUI();
+play(650,.03);
+
+if(path.length===levels[currentLevel].length){
+win();
+}
+}
+
+function undo(){
+if(path.length===0)return;
+const t=path.pop();
+t.div.classList.remove("visited");
+if(path.length===0)drawing=false;
+updateUI();
+}
+
+function lose(){
+drawing=false;
+play(120,.25,"sawtooth");
+const len=line.getTotalLength();
+line.style.strokeDasharray=len;
+line.style.strokeDashoffset=0;
+requestAnimationFrame(()=>{
+line.style.strokeDashoffset=len;
+});
+setTimeout(()=>{
+line.style.strokeDasharray="";
+line.style.strokeDashoffset="";
+loadLevel();
+},900);
+}
+
+function particleBurst(){
+for(let i=0;i<40;i++){
+const p=document.createElement("div");
+p.className="particle";
+const r=game.getBoundingClientRect();
+p.style.left=(r.width/2)+"px";
+p.style.top=(r.height/2)+"px";
+game.appendChild(p);
+const a=Math.random()*Math.PI*2;
+const d=80+Math.random()*130;
+const dx=Math.cos(a)*d;
+const dy=Math.sin(a)*d;
+p.animate([
+{transform:"translate(0,0) scale(1)",opacity:1},
+{transform:`translate(${dx}px,${dy}px) scale(0)`,opacity:0}
+],{duration:800,easing:"ease-out"});
+setTimeout(()=>p.remove(),820);
+}
+}
+
+function win(){
+drawing=false;
+clearInterval(timerInterval);
+play(800,.08);
+setTimeout(()=>play(1000,.1),80);
+setTimeout(()=>play(1300,.18),160);
+particleBurst();
+showMessage("You Win!");
+setTimeout(()=>{
+hideMessage();
+currentLevel++;
+loadLevel();
+},1500);
+}
+
+function showMessage(text,final=false){
+const m=document.getElementById("msg");
+m.classList.add("show");
+document.getElementById("msgText").innerHTML=text;
+const b=document.getElementById("nextButton");
+if(final){
+b.style.display="inline-block";
+}else{
+b.style.display="none";
+}
+}
+
+function hideMessage(){
+document.getElementById("msg").classList.remove("show");
+}
+
+function pointer(e){
+const p=e.touches?e.touches[0]:e;
+return{x:p.clientX,y:p.clientY};
+}
+
+window.addEventListener("pointerdown",e=>{
+e.preventDefault();
+const t=getTileFromPoint(e.clientX,e.clientY);
+if(t){
+if(path.length===0)begin(t);
+else visit(t);
+}
+});
+window.addEventListener("pointermove",e=>{
+if(!drawing)return;
+e.preventDefault();
+const t=getTileFromPoint(e.clientX,e.clientY);
+if(t)visit(t);
+});
+window.addEventListener("pointerup",()=>drawing=false);
+window.addEventListener("pointercancel",()=>drawing=false);
+
+document.getElementById("undoBtn").onclick=undo;
+document.getElementById("restartBtn").onclick=loadLevel;
+document.getElementById("nextButton").onclick=()=>{
+currentLevel=0;
+loadLevel();
+};
+
+loadLevel();
+</script>
+</body>
+</html>
