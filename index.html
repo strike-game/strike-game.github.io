@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Strike Through</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand" aria-label="Strike Through">
+          <span class="brand-word">strike</span>
+          <span class="brand-slash"></span>
+        </div>
+        <button id="menuBtn" class="icon-btn" type="button" aria-label="Open menu">☰</button>
+      </header>
+
+      <main class="game-stage">
+        <section class="hud" aria-label="Game status">
+          <div class="chip">
+            <span class="chip-label">Level</span>
+            <strong id="levelNumber">1</strong>
+          </div>
+          <div class="chip">
+            <span class="chip-label">Visited</span>
+            <strong><span id="progressCount">0</span>/<span id="progressTotal">0</span></strong>
+          </div>
+          <div class="chip">
+            <span class="chip-label">Time</span>
+            <strong id="timer">00:00</strong>
+          </div>
+          <div class="chip">
+            <span class="chip-label">Moves</span>
+            <strong id="moveCount">0</strong>
+          </div>
+        </section>
+
+        <section class="board-card">
+          <div id="boardWrap" class="board-wrap">
+            <div id="board" class="board" aria-label="Puzzle board"></div>
+            <svg id="pathLayer" class="path-layer" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
+            <div id="particles" class="particles"></div>
+            <div id="overlay" class="overlay hidden" role="dialog" aria-live="polite">
+              <div class="overlay-card">
+                <h2 id="overlayTitle">Ready?</h2>
+                <p id="overlayText">Trace the path without breaking it.</p>
+                <div class="overlay-actions">
+                  <button id="overlayAction" class="primary-btn" type="button">Start</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="controls" aria-label="Controls">
+          <button id="restartBtn" class="secondary-btn" type="button">Restart</button>
+          <button id="undoBtn" class="secondary-btn" type="button">Undo</button>
+          <button id="skipBtn" class="secondary-btn" type="button">Skip</button>
+        </section>
+      </main>
+    </div>
+
+    <div id="menuOverlay" class="modal hidden" aria-label="Main menu">
+      <div class="modal-card">
+        <div class="brand hero-brand">
+          <span class="brand-word">strike</span>
+          <span class="brand-slash"></span>
+        </div>
+        <h1>Strike Through</h1>
+        <p>Trace a glowing path through every tile exactly once.</p>
+
+        <div class="tabs" role="tablist" aria-label="Menu tabs">
+          <button class="tab-btn active" data-panel="play" type="button">Play</button>
+          <button class="tab-btn" data-panel="settings" type="button">Settings</button>
+          <button class="tab-btn" data-panel="account" type="button">Account</button>
+        </div>
+
+        <div class="panel active" data-panel="play">
+          <div class="menu-card">
+            <h3>Adventure</h3>
+            <p>Each run generates a fresh path that scales in complexity.</p>
+            <button id="startBtn" class="primary-btn" type="button">Start Run</button>
+          </div>
+          <div class="menu-card small">
+            <h3>How to play</h3>
+            <ul>
+              <li>Tap or click the glowing start tile.</li>
+              <li>Drag through neighboring squares.</li>
+              <li>Do not revisit a tile or break the line.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="panel" data-panel="settings">
+          <div class="menu-card">
+            <label class="switch-row" for="soundToggle">
+              <span>Sound effects</span>
+              <input id="soundToggle" type="checkbox" checked />
+            </label>
+            <label class="switch-row" for="particlesToggle">
+              <span>Particle burst</span>
+              <input id="particlesToggle" type="checkbox" checked />
+            </label>
+            <label class="switch-row" for="reducedMotionToggle">
+              <span>Reduced motion</span>
+              <input id="reducedMotionToggle" type="checkbox" />
+            </label>
+          </div>
+        </div>
+
+        <div class="panel" data-panel="account">
+          <div class="menu-card">
+            <label class="field-label" for="playerName">Player name</label>
+            <input id="playerName" type="text" maxlength="18" placeholder="Enter your name" />
+            <div class="stats-grid">
+              <div>
+                <span class="chip-label">Best</span>
+                <strong id="bestScore">0</strong>
+              </div>
+              <div>
+                <span class="chip-label">Levels</span>
+                <strong id="completedCount">0</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+    <script src="game.js"></script>
+  </body>
+</html>
